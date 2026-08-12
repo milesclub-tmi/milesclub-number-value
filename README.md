@@ -1,5 +1,7 @@
 # MILES CLUB — 내 핸드폰 번호 가격 알아보기
 
+**데모 → https://milesclub-tmi.github.io/milesclub-number-value/**
+
 휴대폰 뒤 8자리의 숫자 패턴을 분석해 엔터테인먼트용 예상 가치를 매기고 공유를 유도하는 미니앱입니다.
 빌드 도구와 npm 의존성이 없습니다. 정적 파일을 그대로 서빙하면 동작합니다.
 외부 요청은 한글 서체(jsDelivr)와 자산 시세 3곳(업비트·open.er-api·CoinGecko)뿐입니다. 전부 실패해도
