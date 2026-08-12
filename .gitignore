@@ -1,0 +1,6 @@
+node_modules/
+.DS_Store
+*.log
+
+# E2E가 쓰는 임시 크롬 프로파일은 os.tmpdir()에 만들어지지만, 혹시 모를 잔재 방지
+.e2e-chrome-profile/

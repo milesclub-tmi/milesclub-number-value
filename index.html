@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>내 번호, 얼마일까? | 마일스클럽</title>
+    <meta
+      name="description"
+      content="휴대폰 번호의 숫자 패턴을 분석해 예상 가치를 보여주는 마일스클럽 미니앱"
+    />
+    <!--
+      숫자·영문은 애플 기기의 SF Pro Rounded(ui-rounded), 한글은 나눔스퀘어라운드.
+      unicode-range로 쪼갠 서브셋이라 화면에 쓰인 글자 청크만 내려받는다(청크당 8~13KB).
+      커밋을 고정해 두었으니 폰트를 갱신할 때만 SHA를 바꾼다.
+    -->
+    <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/gh/fonts-archive/NanumSquareRound@a36996c/subsets/NanumSquareRound-dynamic-subset.css"
+    />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="app" data-app data-state="input">
+      <section class="intro" aria-labelledby="intro-title">
+        <form class="intro__form" data-number-form novalidate>
+          <div class="intro__top">
+            <p class="intro__invite" data-invite hidden></p>
+            <h1 id="intro-title">내 번호,<br />얼마일까?</h1>
+            <p class="intro__sub">내 휴대폰 번호, 골드번호인지 알아봐요.</p>
+
+            <label class="sr-only" for="first-block">번호 가운데 네 자리</label>
+            <label class="sr-only" for="second-block">번호 마지막 네 자리</label>
+
+            <div class="phone" aria-label="휴대폰 번호 입력">
+              <span class="phone__prefix">010</span>
+              <span class="phone__sep" aria-hidden="true"></span>
+              <input
+                id="first-block"
+                data-first
+                inputmode="numeric"
+                size="4"
+                autocomplete="off"
+                maxlength="4"
+                pattern="[0-9]{4}"
+                placeholder="0000"
+                aria-describedby="input-error"
+              />
+              <span class="phone__sep" aria-hidden="true"></span>
+              <input
+                id="second-block"
+                data-second
+                inputmode="numeric"
+                size="4"
+                autocomplete="off"
+                maxlength="4"
+                pattern="[0-9]{4}"
+                placeholder="0000"
+                aria-describedby="input-error"
+              />
+            </div>
+
+            <p class="error" id="input-error" data-error role="alert" hidden></p>
+          </div>
+
+          <div class="intro__bottom">
+            <button class="btn btn--primary" type="submit">이 번호, 얼마일까?</button>
+            <p class="intro__note">
+              재미로 보는 결과예요. 실제 시장 가치와는 아무 관계가 없어요.<br />
+              입력하신 번호는 아무 곳에도 저장하지 않아요.
+            </p>
+          </div>
+        </form>
+      </section>
+
+      <p class="sr-only" data-analysis-status role="status"></p>
+
+      <section class="analysis-panel" data-analysis hidden aria-hidden="true">
+        <p class="scan__digits" data-scan-digits>010-••••-0000</p>
+        <div class="scan__bar"><span data-scan-bar></span></div>
+        <p class="scan__step" data-scan-step>패턴 찾는 중</p>
+      </section>
+
+      <section class="result" data-result hidden tabindex="-1" aria-label="분석 결과">
+        <div class="card hero" data-hero data-tier="base">
+          <svg class="hero__sparkles" viewBox="0 0 400 220" aria-hidden="true" focusable="false">
+            <g fill="currentColor">
+              <path
+                d="M12 0 14.6 9.4 24 12 14.6 14.6 12 24 9.4 14.6 0 12 9.4 9.4Z"
+                transform="translate(302 14) scale(1.5)"
+                opacity="0.9"
+              />
+              <path
+                d="M12 0 14.6 9.4 24 12 14.6 14.6 12 24 9.4 14.6 0 12 9.4 9.4Z"
+                transform="translate(356 78) scale(0.9)"
+                opacity="0.6"
+              />
+              <path
+                d="M12 0 14.6 9.4 24 12 14.6 14.6 12 24 9.4 14.6 0 12 9.4 9.4Z"
+                transform="translate(268 150) scale(0.7)"
+                opacity="0.45"
+              />
+              <circle cx="344" cy="176" r="4" opacity="0.4" />
+              <circle cx="252" cy="52" r="3" opacity="0.5" />
+            </g>
+          </svg>
+
+          <span class="hero__emblem" data-icon="face" data-grade-emblem aria-hidden="true"></span>
+
+          <p class="hero__type">
+            <span class="hero__type-icon" data-icon="face" data-type-icon aria-hidden="true"></span>
+            <span data-type-title>평범한 시민번호</span>
+          </p>
+          <strong class="hero__value" data-value>0원</strong>
+          <p class="hero__meta">
+            <span class="pill" data-grade>NORMAL</span>
+            <span class="hero__rank" data-rank>상위 98%</span>
+          </p>
+          <p class="hero__masked" data-masked>010-••••-0000</p>
+          <p class="hero__note">그냥 재미로 보는 결과예요. 실제 시장 가치가 아니에요 😉</p>
+        </div>
+
+        <div class="card">
+          <div class="card__head">
+            <h2><span class="head-icon" data-icon="search" aria-hidden="true"></span>발견된 패턴</h2>
+            <span class="card__count" data-score>0개</span>
+          </div>
+          <div class="chips" data-patterns></div>
+        </div>
+
+        <div class="card">
+          <div class="card__head"><h2><span class="head-icon" data-icon="chart" aria-hidden="true"></span>능력치</h2></div>
+          <div class="stats" data-bars></div>
+        </div>
+
+        <div class="card">
+          <div class="card__head">
+            <h2><span class="head-icon" data-icon="exchange" aria-hidden="true"></span>이 돈이면</h2>
+            <span class="card__count" data-asset-asof></span>
+          </div>
+          <div class="assets" data-assets></div>
+          <p class="assets__note" data-asset-note hidden></p>
+        </div>
+
+        <details class="more" data-more>
+          <summary><span class="more__label"><span class="head-icon" data-icon="info" aria-hidden="true"></span>자세히 보기</span></summary>
+          <div class="more__body">
+            <p class="more__lead" data-type-description>
+              강한 희소 패턴은 적지만 담백하고 자연스러운 일상형 번호입니다.
+            </p>
+            <ul class="reasons" data-reasons></ul>
+            <p class="more__note">
+              상위 백분위는 010 번호 1억 개를 같은 기준으로 채점해 매긴 순위예요. 번호는 저장하지 않고
+              브라우저 안에서만 분석해요.
+            </p>
+          </div>
+        </details>
+
+        <div class="actions" data-actions>
+          <button class="btn btn--primary" type="button" data-share>자랑하기</button>
+          <div class="fallback" data-share-fallback hidden>
+            <div class="fallback__row">
+              <button class="btn btn--ghost" type="button" data-save-image>이미지 저장</button>
+              <button class="btn btn--ghost" type="button" data-copy-link>링크 복사</button>
+            </div>
+            <p class="fallback__note" data-share-error role="alert"></p>
+          </div>
+          <button class="btn btn--quiet" type="button" data-retry>다시하기</button>
+        </div>
+
+        <a
+          class="plan"
+          href="https://milesclub.co.kr/apps/plan-type-test?utm_source=miniapp&amp;utm_medium=number_value"
+          data-plan-cta
+        >
+          <span class="plan__body">
+            <strong>지금 쓰는 요금제로 보는 내 캐릭터</strong>
+            <span>1분만에 알 수 있는 내 요금제 성향</span>
+          </span>
+          <span class="plan__arrow" aria-hidden="true">→</span>
+        </a>
+      </section>
+    </main>
+
+    <script type="module" src="./src/app.js"></script>
+  </body>
+</html>

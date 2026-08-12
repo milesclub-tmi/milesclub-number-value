@@ -1,0 +1,11 @@
+{
+  "name": "miles-club-number-value",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "python3 -m http.server 4173",
+    "test": "node --test test/*.test.mjs",
+    "calibrate": "node scripts/calibrate.mjs"
+  }
+}
