@@ -762,19 +762,10 @@ h1 {
   gap: 8px;
 }
 
-.fallback__row {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
-}
-
-.fallback__note:empty {
-  display: none;
-}
-
 .fallback__note {
-  color: var(--danger);
+  color: var(--ink-3);
   font-size: 13px;
+  text-align: center;
 }
 
 .plan {

@@ -312,26 +312,30 @@ test("브라우저 스모크", { skip: chrome ? false : "Chrome을 찾지 못해
     assert.equal(await cdp.evaluate('document.querySelector("[data-actions]").getBoundingClientRect().height > 0'), false);
   });
 
-  await t.test("공유 이미지가 만들어진다", async () => {
+  await t.test("공유하면 OG 라우트를 가리키는 링크 하나만 나간다", async () => {
     await open();
     await submit("8282", "8282");
     await wait(2600);
 
-    const blob = await cdp.evaluate(`(async () => {
-      document.querySelector("[data-share]").click();
-      await new Promise(r => setTimeout(r, 1200));
-      const original = URL.createObjectURL;
-      let captured = null;
-      URL.createObjectURL = (value) => { captured = value; return original(value); };
-      document.querySelector("[data-save-image]").click();
-      await new Promise(r => setTimeout(r, 500));
-      URL.createObjectURL = original;
-      return captured ? { type: captured.type, size: captured.size } : null;
-    })()`);
+    // Web Share를 가로채 실제로 어떤 페이로드가 나가는지 본다.
+    const payload = JSON.parse(
+      await cdp.evaluate(`(async () => {
+        let captured = null;
+        navigator.share = (data) => { captured = data; return Promise.resolve(); };
+        document.querySelector("[data-share]").click();
+        await new Promise(r => setTimeout(r, 300));
+        return JSON.stringify(captured);
+      })()`)
+    );
 
-    assert.ok(blob, "공유 이미지 blob이 생성되지 않았습니다");
-    assert.equal(blob.type, "image/png");
-    assert.ok(blob.size > 10000, `이미지가 너무 작습니다: ${blob.size}B`);
+    assert.ok(payload, "공유가 호출되지 않았습니다");
+    assert.deepEqual(Object.keys(payload).sort(), ["text", "title", "url"], "파일이 함께 실리면 URL이 떨어집니다");
+
+    const shared = new URL(payload.url);
+    assert.match(shared.pathname, /\/s$/, "공유 링크는 OG 라우트를 가리켜야 합니다");
+    assert.deepEqual([...shared.searchParams.keys()].sort(), ["g", "t", "v"]);
+    assert.equal(shared.searchParams.get("g"), "LEGEND");
+    assert.ok(!payload.url.includes("8282"), "공유 링크에 번호 흔적이 있습니다");
   });
 
   await t.test("요금제 성향 테스트 CTA가 올바른 링크를 건다", async () => {
@@ -385,13 +389,24 @@ test("브라우저 스모크", { skip: chrome ? false : "Chrome을 찾지 못해
     assert.ok(url, "페이지가 살아 있어야 합니다");
   });
 
-  await t.test("공유로 들어오면 친구 등급이 안내된다", async () => {
-    await open("/?from=share&g=LEGEND");
+  await t.test("공유로 들어오면 친구의 등급과 금액이 안내된다", async () => {
+    await open("/?from=share&g=LEGEND&v=32470000&t=legend");
     assert.equal(await cdp.evaluate('document.querySelector("[data-invite]").hidden'), false);
-    assert.match(await cdp.evaluate('document.querySelector("[data-invite]").textContent'), /LEGEND/);
+
+    const invite = await cdp.evaluate('document.querySelector("[data-invite]").textContent');
+    assert.match(invite, /LEGEND/);
+    assert.match(invite, /32,470,000원/, "금액까지 보여야 훅이 삽니다");
+
+    // 금액이 빠진 링크도 등급만으로 말이 돼야 한다.
+    await open("/?from=share&g=GOLD");
+    assert.match(await cdp.evaluate('document.querySelector("[data-invite]").textContent'), /GOLD/);
 
     await open("/?from=share&g=%3Cscript%3E");
     assert.equal(await cdp.evaluate('document.querySelector("[data-invite]").hidden'), true, "알 수 없는 등급은 무시해야 합니다");
+
+    // 조작된 금액은 등급만 남기고 버린다.
+    await open("/?from=share&g=NORMAL&v=999999999999");
+    assert.equal(await cdp.evaluate('document.querySelector("[data-invite]").textContent'), "친구는 NORMAL 번호였어요. 내 번호는?");
   });
 
   await t.test("전 과정에서 콘솔 예외가 없다", () => {

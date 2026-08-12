@@ -1,5 +1,16 @@
 import { analyzePhoneNumber, isValidKoreanMobileNumber } from "./number-value.js";
-import { createIcon, drawIcon } from "./icons.js";
+import { createIcon } from "./icons.js";
+import {
+  GRADE_ICON,
+  GRADE_TIER,
+  SHARE_BASE,
+  SHARE_PARAM_KEYS,
+  SHARE_PATH,
+  TYPE_ICON,
+  buildShareParams,
+  parseShareParams,
+  shareCopy
+} from "./share-card.js";
 import {
   applyLivePrices,
   convertValue,
@@ -23,7 +34,6 @@ const scanStep = document.querySelector("[data-scan-step]");
 const scanBar = document.querySelector("[data-scan-bar]");
 const shareButton = document.querySelector("[data-share]");
 const retryButton = document.querySelector("[data-retry]");
-const saveButton = document.querySelector("[data-save-image]");
 const copyButton = document.querySelector("[data-copy-link]");
 const planButton = document.querySelector("[data-plan-cta]");
 const fallbackShare = document.querySelector("[data-share-fallback]");
@@ -33,32 +43,7 @@ const heroCard = document.querySelector("[data-hero]");
 
 const analysisSteps = ["패턴 찾는 중", "숫자 규칙 분석 중", "희소도 계산 중", "기억하기 쉬운지 확인 중"];
 
-// 공유 이미지도 화면과 같은 서체를 쓴다. styles.css의 body font-family와 맞춰 둘 것.
-const CANVAS_FONT_STACK = 'ui-rounded, "Nanum Square Round", -apple-system, "Apple SD Gothic Neo", "Apple Color Emoji", sans-serif';
-
-// 아이콘 매핑은 표현 레이어에만 둔다. number-value.js는 UI를 몰라야 한다.
-const GRADE_ICON = {
-  NORMAL: "face",
-  SILVER: "medal",
-  GOLD: "trophy",
-  PLATINUM: "shield",
-  DIAMOND: "gem",
-  LEGEND: "crown"
-};
-
-const TYPE_ICON = {
-  legend: "crown",
-  numeric_noble: "hat",
-  repeat_king: "repeat",
-  mirror_maniac: "mirror",
-  sequence_hunter: "target",
-  gold_collector: "clover",
-  date_keeper: "calendar",
-  flawless: "sparkle",
-  quiet_power: "sprout",
-  citizen: "face"
-};
-
+// 등급·타입 아이콘과 등급 연출은 OG 카드와 함께 써야 해서 share-card.js에 있다.
 const PATTERN_ICON = {
   all_same: "repeat",
   full_repeat: "repeat",
@@ -87,21 +72,10 @@ const PATTERN_ICON = {
 
 const STAT_ICON = { 반복력: "repeat", 기억력: "bulb", 희소성: "gem", 리듬감: "music" };
 
-// DIAMOND·LEGEND는 어두운 카드로 뒤집어 "뽑았다"는 느낌을 준다. GOLD부터 반짝임을 켠다.
-const GRADE_TIER = {
-  NORMAL: "base",
-  SILVER: "base",
-  GOLD: "shiny",
-  PLATINUM: "shiny",
-  DIAMOND: "rare",
-  LEGEND: "rare"
-};
-
 const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
 const ANALYSIS_DURATION = reducedMotion ? 400 : 1300;
 
 let currentResult = null;
-let sharePromise = null;
 let ticker = null;
 let pendingAnalysis = null;
 let priceTable = getPriceTable();
@@ -133,15 +107,14 @@ document.querySelectorAll("[data-icon]").forEach((slot) => setIcon(slot, slot.da
 const query = new URLSearchParams(window.location.search);
 const entrySource = query.get("from") === "share" ? "share" : "direct";
 
-// 공유 링크에는 등급만 싣는다(번호·금액은 절대 아님). 유입자에게 맥락을 주기 위한 최소 정보다.
-const sharedGrade = Object.hasOwn(GRADE_ICON, query.get("g") ?? "") ? query.get("g") : null;
+// 공유 링크에는 등급·예상 금액·타입만 싣는다(번호는 절대 아님). 유입자에게 맥락을 주기 위한 최소 정보다.
+// 손으로 고친 링크가 그대로 찍히지 않도록 share-card.js가 값을 전부 검증한다.
+const sharedFrom = entrySource === "share" ? parseShareParams(query) : null;
 
-if (entrySource === "share" && sharedGrade) {
+if (sharedFrom) {
   const invite = document.querySelector("[data-invite]");
-  invite.replaceChildren(
-    createIcon(GRADE_ICON[sharedGrade]),
-    document.createTextNode(`친구는 ${sharedGrade} 번호였어요. 내 번호는?`)
-  );
+  const copy = shareCopy(sharedFrom);
+  invite.replaceChildren(createIcon(copy.gradeIcon), document.createTextNode(copy.invite));
   invite.hidden = false;
 }
 
@@ -179,10 +152,7 @@ form.addEventListener("submit", (event) => {
       resetToInput();
       showError("분석 중 문제가 생겼어요. 다시 입력해주세요.");
       track("number_value_analyze_error", baseProperties());
-      return;
     }
-
-    sharePromise = prepareShareImage(currentResult);
   }, ANALYSIS_DURATION);
 });
 
@@ -212,27 +182,23 @@ form.addEventListener("submit", (event) => {
   });
 });
 
+/*
+ * 링크 하나만 보낸다. 받는 쪽에서 /s 라우트의 OG 태그가 카드로 펼쳐지므로 이미지를 따로 붙일 필요가 없다.
+ * 파일을 함께 실으면 여러 공유 타깃이 URL을 떨어뜨려 오히려 카드가 안 뜬다.
+ */
 shareButton.addEventListener("click", async () => {
   if (!currentResult) return;
 
   track("number_value_share_click", analyticsFromResult(currentResult));
   fallbackShare.hidden = true;
-  showShareError("");
-
-  const shareUrl = buildShareUrl();
-  const shareText = `내 번호는 ${currentResult.estimatedValueLabel}, ${currentResult.grade}래요. 너 번호는 얼마?`;
 
   if (navigator.share) {
-    const blob = await sharePromise;
-    const file = blob ? new File([blob], "miles-club-number-value.png", { type: "image/png" }) : null;
-
     try {
-      const payload =
-        file && navigator.canShare?.({ files: [file] })
-          ? { title: "내 번호 가격", text: shareText, url: shareUrl, files: [file] }
-          : { title: "내 번호 가격", text: shareText, url: shareUrl };
-
-      await navigator.share(payload);
+      await navigator.share({
+        title: "내 번호 가격",
+        text: `내 번호는 ${currentResult.estimatedValueLabel}, ${currentResult.grade}래요. 너 번호는 얼마?`,
+        url: buildShareUrl()
+      });
       track("number_value_share_complete", analyticsFromResult(currentResult));
       return;
     } catch (error) {
@@ -243,30 +209,11 @@ shareButton.addEventListener("click", async () => {
   fallbackShare.hidden = false;
 });
 
-saveButton.addEventListener("click", async () => {
-  if (!currentResult) return;
-
-  const blob = await sharePromise;
-  if (!blob) {
-    showShareError("이미지를 만들지 못했어요. 잠시 후 다시 시도해주세요.");
-    return;
-  }
-
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = "miles-club-number-value.png";
-  document.body.append(link);
-  link.click();
-  link.remove();
-  window.setTimeout(() => URL.revokeObjectURL(url), 60000);
-  track("number_value_share_complete", analyticsFromResult(currentResult));
-});
-
 copyButton.addEventListener("click", async () => {
   try {
     await navigator.clipboard.writeText(buildShareUrl());
     copyButton.textContent = "복사 완료";
+    if (currentResult) track("number_value_share_complete", analyticsFromResult(currentResult));
   } catch {
     copyButton.textContent = "복사 실패";
   }
@@ -354,10 +301,8 @@ function resetToInput() {
   resultPanel.hidden = true;
   fallbackShare.hidden = true;
   moreDetails.open = false;
-  showShareError("");
   appShell.dataset.state = "input";
   currentResult = null;
-  sharePromise = null;
 }
 
 function renderResult(result) {
@@ -514,143 +459,6 @@ function countUp(element, target, format, duration = 1100, delay = 0) {
   requestAnimationFrame(tick);
 }
 
-function prepareShareImage(result) {
-  try {
-    return createShareImage(result).catch(() => null);
-  } catch {
-    return Promise.resolve(null);
-  }
-}
-
-async function createShareImage(result) {
-  // 캔버스는 웹폰트 로딩을 기다려주지 않는다. 나눔스퀘어라운드가 준비된 뒤에 그린다.
-  await document.fonts?.ready;
-
-  const canvas = document.createElement("canvas");
-  canvas.width = 1080;
-  canvas.height = 1350;
-  const ctx = canvas.getContext("2d");
-
-  if (!ctx) return null;
-
-  const sans = (weight, size) => `${weight} ${size}px ${CANVAS_FONT_STACK}`;
-
-  // 화면과 같은 등급 연출을 공유 이미지에도 적용한다.
-  const rare = (GRADE_TIER[result.grade] ?? "base") === "rare";
-  const palette = rare
-    ? {
-        card: "#17181c",
-        title: "rgba(255, 255, 255, 0.72)",
-        value: "#eeff00",
-        muted: "rgba(255, 255, 255, 0.46)",
-        line: "rgba(255, 255, 255, 0.16)",
-        chipBg: "rgba(255, 255, 255, 0.12)",
-        chipText: "rgba(255, 255, 255, 0.82)",
-        footer: "#ffffff"
-      }
-    : {
-        card: "#ffffff",
-        title: "#454c56",
-        value: "#17181c",
-        muted: "#697079",
-        line: "#ebedf0",
-        chipBg: "#eef0f3",
-        chipText: "#454c56",
-        footer: "#17181c"
-      };
-
-  ctx.fillStyle = "#f2f3f6";
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-  ctx.fillStyle = palette.card;
-  roundedRect(ctx, 72, 96, 936, 1158, 48);
-  ctx.fill();
-
-  // 등급 엠블럼을 카드 오른쪽 위에 스티커처럼 얹는다.
-  ctx.save();
-  ctx.beginPath();
-  roundedRect(ctx, 72, 96, 936, 1158, 48);
-  ctx.clip();
-  ctx.globalAlpha = rare ? 0.34 : 0.2;
-  ctx.translate(742, 150);
-  ctx.rotate((9 * Math.PI) / 180);
-  drawIcon(ctx, GRADE_ICON[result.grade] ?? "face", 0, 0, 230, rare ? "#ffffff" : "#17181c", 1.7);
-  ctx.restore();
-
-  ctx.fillStyle = "#eeff00";
-  ctx.beginPath();
-  ctx.arc(140, 196, 10, 0, Math.PI * 2);
-  ctx.fill();
-
-  ctx.fillStyle = palette.muted;
-  ctx.font = sans(700, 30);
-  ctx.fillText("MILES CLUB", 162, 206);
-
-  drawIcon(ctx, TYPE_ICON[result.type.key] ?? "face", 140, 372, 36, palette.title, 2.2);
-  ctx.fillStyle = palette.title;
-  ctx.font = sans(700, 34);
-  ctx.fillText(result.type.title, 188, 400);
-
-  ctx.fillStyle = palette.value;
-  ctx.font = sans(800, 104);
-  fitText(ctx, `${result.estimatedValue.toLocaleString("ko-KR")}원`, 140, 520, 800, 104);
-
-  const gradeWidth = measurePill(ctx, result.grade, sans(800, 30));
-  ctx.fillStyle = "#eeff00";
-  roundedRect(ctx, 140, 570, gradeWidth, 54, 14);
-  ctx.fill();
-  ctx.fillStyle = "#17181c";
-  ctx.font = sans(800, 30);
-  ctx.fillText(result.grade, 160, 606);
-
-  ctx.fillStyle = palette.title;
-  ctx.font = sans(700, 30);
-  ctx.fillText(`상위 ${result.percentile}%`, 160 + gradeWidth, 606);
-
-  ctx.strokeStyle = palette.line;
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.moveTo(140, 690);
-  ctx.lineTo(940, 690);
-  ctx.stroke();
-
-  ctx.fillStyle = palette.muted;
-  ctx.font = sans(700, 32);
-  ctx.fillText(result.maskedShare, 140, 756);
-
-  ctx.font = sans(700, 28);
-  result.detections.slice(0, 3).forEach((detection, index) => {
-    const top = 830 + index * 74;
-    const width = ctx.measureText(detection.label).width + 80;
-
-    ctx.fillStyle = palette.chipBg;
-    roundedRect(ctx, 140, top, width, 56, 14);
-    ctx.fill();
-
-    drawIcon(ctx, PATTERN_ICON[detection.type] ?? "sparkle", 160, top + 16, 24, palette.chipText, 2.2);
-    ctx.fillStyle = palette.chipText;
-    ctx.fillText(detection.label, 194, top + 36);
-  });
-
-  ctx.fillStyle = palette.footer;
-  ctx.font = sans(800, 36);
-  ctx.fillText("너 번호는 얼마?", 140, 1140);
-
-  ctx.fillStyle = palette.muted;
-  ctx.font = sans(400, 22);
-  ctx.fillText("그냥 재미로 보는 결과예요. 실제 시장 가치가 아니에요.", 140, 1188);
-
-  return new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
-}
-
-function measurePill(ctx, text, font) {
-  const previous = ctx.font;
-  ctx.font = font;
-  const width = ctx.measureText(text).width + 40;
-  ctx.font = previous;
-  return width;
-}
-
 function baseProperties() {
   return { entry_source: entrySource, shared_entry: entrySource === "share" };
 }
@@ -687,11 +495,17 @@ function track(event, properties = {}) {
   }
 }
 
+/*
+ * 공유 링크는 앱이 아니라 /s 라우트를 가리킨다. 크롤러는 JS를 실행하지 않으므로
+ * 앱 URL을 그대로 보내면 미리보기가 비어 버린다. /s가 OG 태그를 찍고 사람은 앱으로 넘긴다.
+ */
 function buildShareUrl() {
-  const url = new URL(window.location.href);
-  url.search = "from=share";
-  if (currentResult) url.searchParams.set("g", currentResult.grade);
-  url.hash = "";
+  const url = new URL(SHARE_PATH, SHARE_BASE || window.location.href);
+  if (!currentResult) return url.toString();
+
+  const params = buildShareParams(currentResult);
+  for (const key of SHARE_PARAM_KEYS) url.searchParams.set(key, params[key]);
+
   return url.toString();
 }
 
@@ -708,11 +522,6 @@ function showError(message) {
   errorMessage.hidden = false;
 }
 
-function showShareError(message) {
-  const note = fallbackShare.querySelector("[data-share-error]");
-  if (note) note.textContent = message;
-}
-
 function clearError() {
   errorMessage.textContent = "";
   errorMessage.hidden = true;
@@ -727,25 +536,4 @@ function setIcon(slot, name) {
   if (!slot) return;
   slot.dataset.icon = name;
   slot.replaceChildren(createIcon(name));
-}
-
-function roundedRect(ctx, x, y, width, height, radius) {
-  ctx.beginPath();
-  ctx.moveTo(x + radius, y);
-  ctx.arcTo(x + width, y, x + width, y + height, radius);
-  ctx.arcTo(x + width, y + height, x, y + height, radius);
-  ctx.arcTo(x, y + height, x, y, radius);
-  ctx.arcTo(x, y, x + width, y, radius);
-  ctx.closePath();
-}
-
-function fitText(ctx, text, x, y, maxWidth, startSize) {
-  let fontSize = startSize;
-
-  while (ctx.measureText(text).width > maxWidth && fontSize > 56) {
-    fontSize -= 4;
-    ctx.font = `800 ${fontSize}px ${CANVAS_FONT_STACK}`;
-  }
-
-  ctx.fillText(text, x, y);
 }

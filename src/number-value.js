@@ -34,7 +34,8 @@ const GRADE_BANDS = buildGradeBands([
   { grade: "LEGEND", share: 0.002, valueMin: 30000000, valueMax: 90000000 }
 ]);
 
-const TYPE_RULES = Object.freeze({
+// 공유 카드(share-card.js)가 타입 키로 제목을 되찾아야 해서 내보낸다.
+export const TYPE_RULES = Object.freeze({
   legend: {
     key: "legend",
     title: "전설의 번호",

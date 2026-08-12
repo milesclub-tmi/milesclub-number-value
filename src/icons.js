@@ -1,7 +1,7 @@
 /*
  * 24×24 그리드에 그린 아이콘 세트. 도형을 원시 형태(path/circle/rect/line)로 두고
- * DOM(SVG)과 공유 이미지(Canvas Path2D)가 같은 정의를 함께 쓴다.
- * 색은 전부 currentColor라 어두운 히어로 카드에서도 자동으로 뒤집힌다.
+ * DOM(createIcon)과 엣지 OG 생성기(iconDataUri)가 같은 정의를 함께 쓴다.
+ * 화면 아이콘은 전부 currentColor라 어두운 히어로 카드에서도 자동으로 뒤집힌다.
  *
  *   { p: "M..." }        선으로 그리는 path
  *   { p: "M...", fill }  채우는 path
@@ -294,47 +294,34 @@ function toSvgShape(shape) {
   return element;
 }
 
-export function drawIcon(ctx, name, x, y, size, color, strokeWidth = 2) {
-  const shapes = ICONS[name] ?? ICONS.sparkle;
-  const scale = size / 24;
+/*
+ * DOM이 없는 곳(엣지 OG 생성기)에서 쓰는 문자열 렌더러.
+ * currentColor를 못 쓰므로 색을 인자로 받아 박아 넣는다.
+ */
+export function iconSvgMarkup(name, { color = "#000000", strokeWidth = 2, size = 24 } = {}) {
+  const shapes = (ICONS[name] ?? ICONS.sparkle).map((shape) => shapeMarkup(shape, color)).join("");
 
-  ctx.save();
-  ctx.translate(x, y);
-  ctx.scale(scale, scale);
-  ctx.strokeStyle = color;
-  ctx.fillStyle = color;
-  ctx.lineWidth = strokeWidth;
-  ctx.lineCap = "round";
-  ctx.lineJoin = "round";
-
-  for (const shape of shapes) {
-    const path = shape.p ? new Path2D(shape.p) : new Path2D();
-
-    if (shape.c) path.arc(shape.c[0], shape.c[1], shape.c[2], 0, Math.PI * 2);
-    else if (shape.r) roundRectPath(path, shape.r);
-    else if (shape.l) {
-      path.moveTo(shape.l[0], shape.l[1]);
-      path.lineTo(shape.l[2], shape.l[3]);
-    }
-
-    if (shape.fill) ctx.fill(path);
-    else ctx.stroke(path);
-  }
-
-  ctx.restore();
+  return (
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 24 24" ` +
+    `fill="none" stroke="${color}" stroke-width="${strokeWidth}" ` +
+    `stroke-linecap="round" stroke-linejoin="round">${shapes}</svg>`
+  );
 }
 
-// Path2D.roundRect는 비교적 최근 API라 없을 때를 대비해 직접 그린다.
-function roundRectPath(path, [x, y, width, height, radius]) {
-  if (typeof path.roundRect === "function") {
-    path.roundRect(x, y, width, height, radius);
-    return;
+// satori는 <img>의 data URI SVG만 확실히 받아준다. base64 없이 인코딩만 해서 넘긴다.
+export function iconDataUri(name, options) {
+  return `data:image/svg+xml;utf8,${encodeURIComponent(iconSvgMarkup(name, options))}`;
+}
+
+function shapeMarkup(shape, color) {
+  const paint = shape.fill ? ` fill="${color}"` : "";
+
+  if (shape.p) return `<path d="${shape.p}"${paint} />`;
+  if (shape.c) return `<circle cx="${shape.c[0]}" cy="${shape.c[1]}" r="${shape.c[2]}"${paint} />`;
+  if (shape.r) {
+    const [x, y, width, height, radius] = shape.r;
+    return `<rect x="${x}" y="${y}" width="${width}" height="${height}" rx="${radius}"${paint} />`;
   }
 
-  path.moveTo(x + radius, y);
-  path.arcTo(x + width, y, x + width, y + height, radius);
-  path.arcTo(x + width, y + height, x, y + height, radius);
-  path.arcTo(x, y + height, x, y, radius);
-  path.arcTo(x, y, x + width, y, radius);
-  path.closePath();
+  return `<line x1="${shape.l[0]}" y1="${shape.l[1]}" x2="${shape.l[2]}" y2="${shape.l[3]}" />`;
 }

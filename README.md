@@ -1,16 +1,20 @@
 # MILES CLUB — 내 핸드폰 번호 가격 알아보기
 
-**데모 → https://milesclub-tmi.github.io/milesclub-number-value/**
-
 휴대폰 뒤 8자리의 숫자 패턴을 분석해 엔터테인먼트용 예상 가치를 매기고 공유를 유도하는 미니앱입니다.
-빌드 도구와 npm 의존성이 없습니다. 정적 파일을 그대로 서빙하면 동작합니다.
+
+앱 본체는 빌드 도구도 의존성도 없는 정적 파일입니다. 다만 **결과별 공유 카드(OG 이미지)를 요청 시점에
+그리기 때문에 엣지 함수가 필요**하고, 그래서 배포 대상이 Vercel입니다 — 정적 호스팅에 올리면 앱은 그대로
+돌지만 `/s` 공유 링크와 `/api/og`가 죽어 미리보기가 비어 버립니다. 자세한 이유는 "공유" 참고.
+
 외부 요청은 한글 서체(jsDelivr)와 자산 시세 3곳(업비트·open.er-api·CoinGecko)뿐입니다. 전부 실패해도
 시스템 서체와 기준 시세로 폴백되어 기능에는 영향이 없고, 사용자 데이터는 어디에도 실리지 않습니다. 첫 방문 기준 폰트 23개 청크 · 약 365KB를 내려받습니다 — 줄이려면 아래 "남은 것" 참고.
 
 ```bash
-npm run dev        # http://localhost:4173
-npm test           # node:test 57개 (엔진·마크업·분포 + 실제 Chrome 스모크)
-npm run calibrate  # 점수 보정 테이블 재생성 (약 9분)
+npm run dev         # http://localhost:4173 (정적만. /s·/api는 안 뜬다)
+npm run dev:og      # vercel dev — 공유 링크와 OG 이미지까지 포함
+npm test            # node:test 66개 (엔진·마크업·분포·공유 + 실제 Chrome 스모크)
+npm run og:preview  # 공유 카드를 tmp/og/*.png 로 뽑아 눈으로 확인
+npm run calibrate   # 점수 보정 테이블 재생성 (약 9분)
 ```
 
 ## 구조
@@ -19,10 +23,14 @@ npm run calibrate  # 점수 보정 테이블 재생성 (약 9분)
 | --- | --- |
 | `src/number-value.js` | 점수 엔진. DOM·네트워크·난수를 쓰지 않는 순수 모듈 |
 | `src/score-calibration.js` | **생성 파일.** 패턴 점수의 전수 분포(CDF) |
-| `src/app.js` | DOM 바인딩, 화면 전이, 공유 이미지, 분석 이벤트 |
-| `src/icons.js` | SVG 아이콘 32개. DOM과 Canvas가 공유하는 도형 정의 |
+| `src/app.js` | DOM 바인딩, 화면 전이, 공유, 분석 이벤트 |
+| `src/share-card.js` | 공유 파라미터·등급 연출·문구. **앱과 엣지가 함께 쓰는 순수 모듈** |
+| `src/icons.js` | SVG 아이콘 33개. DOM과 엣지 OG 생성기가 공유하는 도형 정의 |
 | `src/asset-prices.js` | 원화 → 달러·금·주식·비트코인 환산. 달러·금·BTC는 실시간 |
+| `api/share.js` | `/s` 공유 링크. OG 태그를 찍고 사람은 앱으로 넘긴다 |
+| `api/og.js` | 결과별 1200×630 OG 이미지를 요청 시점에 렌더 |
 | `scripts/calibrate.mjs` | 보정 테이블 생성기 |
+| `scripts/og-preview.mjs` | 공유 카드 로컬 미리보기 |
 | `test/e2e.test.mjs` | 실제 Chrome을 띄워 조작하는 스모크 테스트 (의존성 없음) |
 | `index.html` / `styles.css` | 단일 화면. `data-state`(input → analysis → result)로 전환 |
 
@@ -37,7 +45,8 @@ npm run calibrate  # 점수 보정 테이블 재생성 (약 9분)
   제공하므로 `500`은 400으로, `600`은 700으로 매칭됩니다 — CSS에 없는 굵기를 적으면 의도와 다르게
   렌더되니 700/800으로만 적으세요.
 - 결과가 **재미로 보는 것이며 실제 시장 가치가 아니라는 문구**를 입력 화면 하단과 결과 히어로 카드,
-  공유 이미지 세 곳에 노출합니다. 접혀 있는 `자세히 보기` 안에만 두지 않습니다.
+  공유 카드(이미지와 `og:description` 양쪽) 세 곳에 노출합니다. 접혀 있는 `자세히 보기` 안에만 두지 않습니다.
+  `test/share-card.test.mjs`가 여섯 등급 전부에 문구가 남아 있는지 확인합니다.
 - 색은 무채색 기반에 브랜드 애시드 그린(`--accent`) 하나만 등급 배지에 씁니다. 능력치 바는 먹색입니다.
 - 회색 계조는 **WCAG AA(4.5:1)를 넘도록** 잡혀 있습니다. `--ink-2` 8.67, `--ink-3` 5.01(흰 카드 기준)입니다.
   아이콘·구분선처럼 텍스트가 아닌 요소는 명암비 대상이 아니므로 `--icon-muted`를 따로 씁니다.
@@ -45,11 +54,12 @@ npm run calibrate  # 점수 보정 테이블 재생성 (약 9분)
 - 등급별 연출이 3단계입니다. `GRADE_TIER`가 `base`(NORMAL·SILVER) / `shiny`(GOLD·PLATINUM, 반짝임 켜짐) /
   `rare`(DIAMOND·LEGEND, 히어로 카드가 먹색으로 뒤집히고 금액이 애시드 그린)로 나눕니다. 공유 이미지도
   같은 등급 연출을 따릅니다.
-- 아이콘은 이모지 대신 직접 그린 SVG 28개(`src/icons.js`)를 씁니다. 도형을 원시 형태로 저장해
-  **DOM(SVG)과 공유 이미지(Canvas Path2D)가 같은 정의를 공유**합니다 — 한쪽만 바뀌는 일이 없습니다.
-  전부 `currentColor`라 어두운 히어로 카드에서 자동으로 반전됩니다.
-- 아이콘 매핑(`GRADE_ICON` / `TYPE_ICON` / `PATTERN_ICON` / `STAT_ICON`)은 표현 레이어인 `app.js`에만
-  둡니다. 점수 엔진은 UI를 모릅니다. 마크업에 `data-icon="이름"`을 붙이면 자동으로 채워집니다.
+- 아이콘은 이모지 대신 직접 그린 SVG 33개(`src/icons.js`)를 씁니다. 도형을 원시 형태로 저장해
+  **화면(`createIcon`)과 공유 카드(`iconDataUri`)가 같은 정의를 공유**합니다 — 한쪽만 바뀌는 일이 없습니다.
+  화면 아이콘은 전부 `currentColor`라 어두운 히어로 카드에서 자동으로 반전됩니다.
+- 아이콘 매핑 중 `PATTERN_ICON` / `STAT_ICON`은 화면에만 쓰여 `app.js`에, `GRADE_ICON` / `TYPE_ICON`은
+  공유 카드와 함께 써야 해서 `share-card.js`에 둡니다. 점수 엔진은 여전히 UI를 모릅니다.
+  마크업에 `data-icon="이름"`을 붙이면 자동으로 채워집니다.
 - 상세 근거와 고지 문구는 기본으로 접어 두고 `자세히 보기`(`<details>`)로 엽니다. 열면 +217px입니다.
 - `자랑하기` / `다시하기`는 화면 하단에 고정합니다(`.actions`). `.result` 안에 있어서 입력·분석 화면에서는
   자동으로 사라집니다. 콘텐츠가 가리지 않도록 `ResizeObserver`가 바 높이를 `--actions-height`로 넣고
@@ -104,6 +114,56 @@ npm run calibrate  # 점수 보정 테이블 재생성 (약 9분)
 
 화면에 나가는 문장은 전부 해요체입니다. 엔진이 만드는 문자열도 마찬가지이니 새 문구를 넣을 때 맞춰주세요.
 
+## 공유
+
+**링크 하나만 보냅니다.** 이미지 파일을 함께 실으면 여러 공유 타깃이 URL을 떨어뜨려 오히려 카드가
+안 뜨기 때문에, `navigator.share`에는 `title`·`text`·`url`만 넘깁니다.
+
+카드가 뜨는 원리는 이렇습니다.
+
+```
+공유 버튼 → https://<host>/s?g=LEGEND&v=32470000&t=legend
+                        │
+            ┌───────────┴────────────┐
+       크롤러가 긁음               사람이 클릭
+       (JS 실행 안 함)                  │
+            ↓                          ↓
+      api/share.js               location.replace
+      OG 태그만 담긴 얇은 HTML     → /?from=share&g=..&v=..&t=..
+      og:image ↓                    "친구는 3,247만원짜리
+      api/og.js → 1200×630 PNG       LEGEND 번호였어요"
+```
+
+**`?g=LEGEND` 같은 쿼리로 미리보기를 바꾸는 것은 원리적으로 불가능합니다.** 크롤러는 JS를 실행하지 않아
+`document.title`을 바꿔도 보지 못합니다. 그래서 URL마다 실제로 다른 HTML을 돌려주는 `/s` 라우트가 필요하고,
+이것이 이 프로젝트에 엣지 함수가 들어온 유일한 이유입니다.
+
+- **OG 이미지는 매 요청 그립니다.** 등급별 정적 이미지를 미리 만들어 두면 정확한 금액을 넣을 수 없습니다.
+  색·아이콘·문구는 화면과 같은 정의(`share-card.js`·`icons.js`)를 쓰므로 한쪽만 바뀌지 않습니다.
+- 서체는 화면과 같은 나눔스퀘어라운드를 **index.html이 pin해 둔 것과 같은 커밋**에서 받아 씁니다.
+  폰트를 갱신하면 `index.html`과 `api/og.js`의 SHA를 함께 바꾸세요.
+- 카드 이미지는 `immutable`로 캐시합니다. 같은 파라미터면 항상 같은 그림이라 안전합니다.
+  **디자인을 바꾸면 카카오톡이 옛 이미지를 계속 물고 있습니다** — [카카오 디버거](https://developers.kakao.com/tool/debugger/sharing)로
+  캐시를 지우세요. 페이스북은 [Sharing Debugger](https://developers.facebook.com/tools/debug/)를 씁니다.
+- 손으로 고친 링크는 `parseShareParams`가 전부 걸러냅니다. 모르는 등급이면 공유 맥락 자체를 버리고,
+  엔진이 낼 수 없는 금액이나 없는 타입은 조용히 떨어뜨린 뒤 등급만 남깁니다. `og:url`도 요청 URL을
+  되비추지 않고 검증을 통과한 값으로 다시 만듭니다.
+
+카드 디자인을 건드렸으면 배포 전에 눈으로 확인하세요. 배포 후에만 보이는 산출물이라 놓치기 쉽습니다.
+
+```bash
+npm run og:preview           # tmp/og/*.png
+npm run og:preview LEGEND    # 하나만
+```
+
+### 다른 곳에 임베드한다면
+
+`src/share-card.js`의 `SHARE_BASE`를 비워 두면 공유 링크가 현재 origin 기준 상대 경로(`./s`)가 됩니다.
+앱을 호스트 웹뷰나 다른 도메인에 올려서 `/s`가 같은 origin에 없다면 여기에 절대 URL을 넣으세요.
+
+`index.html`의 기본 OG 태그(주소를 그냥 붙여넣었을 때의 카드)는 상대 경로 `./api/og`를 씁니다.
+카카오·X·슬랙에서는 동작하지만 페이스북까지 확실히 하려면 도메인 확정 후 절대 주소로 바꾸세요.
+
 ## 자산 환산 시세
 
 결과 화면 "이 돈이면" 섹션의 시세입니다. **화면을 막지 않습니다** — 스냅샷으로 먼저 그리고
@@ -151,12 +211,15 @@ npm run calibrate   # 1억 개 전수 계산, 워커 9개 기준 약 9분
 - 전화번호 원문은 서버로 전송하지 않고, URL·분석 이벤트에도 넣지 않습니다. 분석은 전부 브라우저 안에서 끝납니다.
 - `track()`은 화이트리스트에 있는 6개 키(`score_bucket`, `grade`, `detected_pattern_types`,
   `estimated_value_bucket`, `entry_source`, `shared_entry`)만 통과시킵니다.
-- 공유 URL은 `?from=share`와 **등급(`g`) 하나만** 싣습니다. 번호·금액은 절대 넣지 않습니다.
-  유입자에게 "친구는 LEGEND 번호였어요" 맥락을 주기 위한 최소 정보이고, 알 수 없는 값은 무시합니다.
-- 화면에는 `010-12••-5678`, 공유 이미지에는 `010-••••-••78`까지만 노출합니다.
+- 공유 URL은 **등급(`g`)·예상 금액(`v`)·타입(`t`) 세 개만** 싣습니다. 번호 원문은 물론 그로부터
+  복원되는 값(`normalized`·`tail`·`maskedShare` 등)은 절대 넣지 않습니다. 금액은 등급 구간 안에서
+  로그 보간된 값이라 같은 금액을 받는 번호가 수없이 많고, 번호를 좁히는 데 쓸 수 없습니다.
+- 화면에는 `010-12••-5678`까지만 노출합니다. **공유 카드에는 번호를 아예 싣지 않습니다.**
+- 알 수 없는 값은 무시합니다. 등급이 성립하지 않으면 공유 맥락 전체를 버립니다.
 
-이 약속은 `test/markup.test.mjs`가 코드 수준에서 검증합니다 — 공유 URL 파라미터 화이트리스트와
-분석 이벤트 키 목록을 각각 고정해 두었습니다.
+이 약속은 `test/markup.test.mjs`와 `test/share-card.test.mjs`가 코드 수준에서 검증합니다 —
+공유 파라미터 화이트리스트(`SHARE_PARAM_KEYS`)와 분석 이벤트 키 목록을 각각 고정해 두었고,
+`buildShareParams`·`buildShareUrl`·`api/share.js`가 번호 유래 필드를 언급조차 못 하게 막습니다.
 
 분석 이벤트는 11종입니다. 이탈 지점도 함께 잡습니다: `number_value_input_error`(번호 입력 실패),
 `number_value_analyze_error`, `number_value_runtime_error`(실기기 예외).
@@ -178,6 +241,10 @@ window.addEventListener("miles_navigate", (event) => {
 
 ## 남은 것
 
+- **실제 공유 검증은 배포 후에 해야 합니다.** 카카오톡·인스타 DM·페이스북에 링크를 붙여 카드가 뜨는지,
+  등급별 색이 맞는지 눈으로 확인하세요. 로컬에서는 크롤러가 접근할 수 없어 확인이 불가능합니다.
+- 인스타그램 스토리에 붙일 이미지 저장 기능이 사라졌습니다. 필요해지면 OG 카드와 같은 정의로
+  4:5(1080×1350) 변형을 `api/og.js`에 파라미터 하나로 추가하는 편이 자연스럽습니다.
 - 실기기 검증은 아직 없습니다. E2E는 헤드리스 Chrome 에뮬레이션이라 iOS Safari의 `navigator.share`,
   홈 인디케이터, 키보드가 올라올 때의 레이아웃은 실제 폰으로 확인해야 합니다.
 - 의미 숫자 사전(`MEANING_NUMBERS`)은 8개뿐입니다. 늘리면 재보정이 필요합니다.

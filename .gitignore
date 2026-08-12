@@ -4,3 +4,12 @@ node_modules/
 
 # E2E가 쓰는 임시 크롬 프로파일은 os.tmpdir()에 만들어지지만, 혹시 모를 잔재 방지
 .e2e-chrome-profile/
+
+# og:preview 산출물
+tmp/
+
+# 클로드 세션 연속성 파일 (개인 작업 기록 — 공개 저장소에 올리지 않는다)
+HISTORY.md
+DIGEST.md
+SKILLS.md
+errorfix.md

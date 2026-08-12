@@ -5,7 +5,12 @@
   "type": "module",
   "scripts": {
     "dev": "python3 -m http.server 4173",
+    "dev:og": "vercel dev --listen 4173",
     "test": "node --test test/*.test.mjs",
-    "calibrate": "node scripts/calibrate.mjs"
+    "calibrate": "node scripts/calibrate.mjs",
+    "og:preview": "node scripts/og-preview.mjs"
+  },
+  "dependencies": {
+    "@vercel/og": "^0.6.8"
   }
 }
